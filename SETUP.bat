@@ -60,83 +60,70 @@ if errorlevel 1 (
 echo   [OK] pyserial
 
 REM --------------------------------------------------------- the firmware ---
+REM  There is ONE update path on purpose, and it is UPDATE.bat: it fetches
+REM  first, checks the password actually opens the new archive, and only then
+REM  replaces anything - so an offline laptop or a mistyped password costs
+REM  nothing. Doing it again here would mean two copies of the careful part,
+REM  and sooner or later only one of them would be right.
 echo.
-if exist "%DEST%\.git" (
-  echo   [..] updating the firmware folder
-  pushd "%DEST%"
-  git pull --ff-only
-  if errorlevel 1 (
-    echo.
-    echo   [!!] Could not update. Someone has edited this folder by hand.
-    echo        It is published output - it should not be edited. Easiest fix:
-    echo        rename %DEST% to %DEST%-old and run this again.
-    set PROBLEM=1
-  )
-  popd
-) else if exist "FLASH.bat" (
-  echo   [..] this IS the firmware folder - updating in place
-  git pull --ff-only
-) else (
-  echo   [..] downloading the firmware folder
-  echo        No sign-in needed - this repository is public.
+if exist "FLASH.bat" goto :inplace
+if exist "%DEST%\.git" goto :handover
+
+echo   [..] downloading the firmware folder
+echo        No sign-in needed - this repository is public.
+echo.
+git clone --branch %BRANCH% --single-branch %REPO% "%DEST%"
+if errorlevel 1 (
   echo.
-  git clone --branch %BRANCH% --single-branch %REPO% "%DEST%"
-  if errorlevel 1 (
-    echo.
-    echo   [!!] Download failed - this laptop probably has no internet.
-    echo        Nothing else was changed. Try again when it is online.
-    set PROBLEM=1
-  )
+  echo   [!!] Download failed - this laptop probably has no internet.
+  echo        Nothing else was changed. Try again when it is online.
+  set PROBLEM=1
+  goto :sorry
 )
 
-REM ------------------------------------------------------------- unpack ----
-REM The public repo carries ONE encrypted archive, not loose firmware. Unpack
-REM it in place; 7z asks for the password itself so it is never an argument.
-set ARCDIR=
-if exist "%DEST%\hs300-release.7z" set ARCDIR=%DEST%
-if exist "hs300-release.7z"         set ARCDIR=.
-if not "%ARCDIR%"=="" (
-  echo.
-  echo   [..] the firmware is in a password-protected archive.
-  set "PW="
-  set /p "PW=       password: "
-  echo.
-  pushd "%ARCDIR%"
-  REM  We ask here rather than letting 7-Zip ask, because 7-Zip prompts on the
-  REM  console and this call is quietened with >nul - the technician would have
-  REM  been left staring at a blank line. (A password containing & ^ %% or !
-  REM  would need escaping here; keep it plain.)  !PW! NOT %%PW%% - this is
-  REM  inside a ( ) block, and %%PW%% is expanded before set /p ever runs,
-  REM  which hands 7-Zip an empty password and reports a wrong one.
-  7z x -y -p"!PW!" "hs300-release.7z" >nul
-  set RC=!ERRORLEVEL!
-  set "PW="
-  popd
-  if not "!RC!"=="0" (
-    echo   [!!] wrong password, or the archive is damaged. Nothing was changed.
-    set PROBLEM=1
-    goto :sorry
-  )
-  echo   [OK] firmware unpacked
+:handover
+if not exist "%DEST%\UPDATE.bat" (
+  echo   [!!] the download did not complete - UPDATE.bat is not there.
+  set PROBLEM=1
+  goto :sorry
+)
+echo.
+set HS300_NOPAUSE=1
+call "%DEST%\UPDATE.bat"
+set "HS300_NOPAUSE="
+if errorlevel 1 (
+  set PROBLEM=1
+  goto :sorry
 )
 
 REM -------------------------------------------------------------- verify ----
 echo.
-set TOOLS=
-if exist "%DEST%\tools\hs300_ota.py" set TOOLS=%DEST%\tools
-if exist "tools\hs300_ota.py"        set TOOLS=tools
-if "%TOOLS%"=="" (
+if not exist "%DEST%\tools\hs300_ota.py" (
   echo   [!!] the flashing tools are not here - the download did not complete
   set PROBLEM=1
   goto :sorry
 )
-python "%TOOLS%\hs300_ota.py" --help >nul 2>nul
+python "%DEST%\tools\hs300_ota.py" --help >nul 2>nul
 if errorlevel 1 (
   echo   [!!] the flashing tool will not run
   set PROBLEM=1
   goto :sorry
 )
 echo   [OK] flashing tools run
+goto :sorry
+
+REM  SETUP.bat run from INSIDE the firmware folder. Hand over completely and
+REM  exit on the same line: the update can rewrite this very file, and cmd
+REM  reads a batch file from disk as it goes.
+:inplace
+echo   [..] this IS the firmware folder, so UPDATE.bat is the tool here.
+if not exist "UPDATE.bat" (
+  echo   [!!] UPDATE.bat is missing. Run SETUP.bat in a new, empty folder.
+  echo.
+  pause & exit /b 1
+)
+echo.
+call "UPDATE.bat" & exit /b
 
 :sorry
 echo.
