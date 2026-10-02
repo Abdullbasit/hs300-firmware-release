@@ -134,7 +134,10 @@ if not exist "!NEW!\tools\hs300_ota.py" (
 REM  The new tree is complete and proven. Carry the marker file across BEFORE
 REM  the mirror, or the mirror would delete it as "not in the new tree".
 if exist "!DIR!" (
-  for %%M in ("!DIR!\tty*.*" "!DIR!\port*.*" "!DIR!\ccom*.*" "!DIR!\com*.*") do (
+  REM  By EXTENSION, exactly as PORT.bat itself looks for them - NOT by a
+  REM  "port*" prefix, which also matched PORT.bat and copied the OLD one over
+  REM  the new tree's, pinning it for ever.
+  for %%M in ("!DIR!\*.ttl" "!DIR!\*.485" "!DIR!\*.rs485") do (
     if exist "%%M" copy /y "%%M" "!NEW!\" >nul & echo   keeping your marker file %%~nxM
   )
 )
