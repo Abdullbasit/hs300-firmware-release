@@ -1,6 +1,6 @@
 @echo off
 REM ===========================================================================
-REM  Get newly published firmware.  Run this where there IS internet.
+REM  Get the published firmware.  Run this where there IS internet.
 REM
 REM      UPDATE.bat
 REM
@@ -10,23 +10,30 @@ REM
 REM  You will be asked for the password - the same one the engineer gave you
 REM  for SETUP. It is not stored anywhere; you type it each time.
 REM
-REM  NOTHING LOCAL IS DELETED UNTIL THE NEW FIRMWARE IS IN HAND. The order is
-REM  deliberate: reach GitHub first, then check the password actually opens the
-REM  new archive, and only then replace the firmware folders. If this laptop is
-REM  offline, or the password is wrong, it stops with everything still working.
-REM  An update that half-finishes on a laptop in a field is worse than no
-REM  update at all.
+REM  IT REPLACES THE WHOLE FOLDER WITH A CLEAN ONE. Nothing is merged and
+REM  nothing is left over, so a board or a tool that was WITHDRAWN cannot sit
+REM  here looking current, and a half-finished earlier attempt cannot survive.
 REM
-REM  Your own files are kept. Only what the archive delivers is replaced - so a
-REM  marker file such as tty5.ttl, and any notes or logs you saved here, stay.
+REM  NOTHING LOCAL IS TOUCHED UNTIL THE NEW TREE IS COMPLETE AND PROVEN. The
+REM  download and the unpack both happen in a TEMPORARY folder; only once the
+REM  password has opened it and the flashing tool is really there does this
+REM  folder get replaced. If the laptop is offline, or the password is wrong, it
+REM  stops with everything exactly as it was. An update that half-finishes on a
+REM  laptop in a field is worse than no update at all.
+REM
+REM  THE ONE THING CARRIED ACROSS is your marker file - tty5.ttl, tty4.485 and
+REM  the like. That is configuration, not content: losing it would quietly
+REM  leave the scripts not knowing which cable the drive is on. Anything else
+REM  you kept in here is NOT preserved, so keep notes and logs somewhere else.
 REM ===========================================================================
 setlocal EnableDelayedExpansion
 
-REM  Work from a copy in TEMP. "git reset" below can rewrite THIS VERY FILE,
-REM  and cmd.exe reads a batch file from disk line by line as it runs - replace
-REM  it underneath itself and execution jumps into whatever now sits at that
-REM  byte offset. The copy is immune. The relaunch and the exit are on ONE line
-REM  on purpose: once this line is parsed, no further read of this file happens.
+REM  Work from a copy in TEMP. This folder is about to be replaced wholesale,
+REM  including this very file, and cmd.exe reads a batch file from disk line by
+REM  line as it runs - pull it out from underneath itself and execution jumps
+REM  into whatever now sits at that byte offset. The copy is immune. The
+REM  relaunch and the exit share ONE line on purpose: once that line is parsed,
+REM  this file is never read again.
 if "%~1"=="--inplace" goto :work
 set "WORK=%TEMP%\hs300_update"
 rmdir /s /q "%WORK%" 2>nul
@@ -35,12 +42,22 @@ copy /y "%~f0" "%WORK%\UPDATE.bat" >nul
 call "%WORK%\UPDATE.bat" --inplace "%~dp0" & exit /b
 
 :work
-cd /d "%~2"
+set REPO=https://github.com/Abdullbasit/hs300-firmware-release.git
+set BRANCH=main
 set ARC=hs300-release.7z
 
+REM  %~2 arrives with a trailing backslash; strip it so it can be used as a name.
+set "DIR=%~2"
+if "!DIR:~-1!"=="\" set "DIR=!DIR:~0,-1!"
+for %%P in ("!DIR!") do set "PARENT=%%~dpP"
+set "NEW=%TEMP%\hs300_new"
+
+REM  Sit in the PARENT, never inside the folder being replaced.
+cd /d "!PARENT!"
+
 set SEVENZIP=%ProgramFiles%\7-Zip\7z.exe
-if not exist "%SEVENZIP%" set SEVENZIP=%ProgramFiles(x86)%\7-Zip\7z.exe
-if not exist "%SEVENZIP%" (
+if not exist "!SEVENZIP!" set SEVENZIP=%ProgramFiles(x86)%\7-Zip\7z.exe
+if not exist "!SEVENZIP!" (
   echo   7-Zip is missing. Run SETUP.bat instead - it installs it.
   pause & exit /b 1
 )
@@ -49,23 +66,14 @@ if errorlevel 1 (
   echo   git is missing. Run SETUP.bat instead - it installs it.
   pause & exit /b 1
 )
-if not exist ".git" (
-  echo.
-  echo   This folder was not downloaded with git, so it cannot update itself.
-  echo   Run SETUP.bat instead.
-  echo.
-  pause & exit /b 1
-)
 
 echo.
-echo   you have:
-git log --oneline -1
+echo   downloading to a temporary folder first - nothing here is touched yet
 echo.
-echo   checking GitHub...
-
-REM  fetch only - this writes nothing into the folder you can see.
-git fetch -q origin main
+rmdir /s /q "!NEW!" 2>nul
+git clone -q --depth 1 --branch %BRANCH% --single-branch %REPO% "!NEW!"
 if errorlevel 1 (
+  rmdir /s /q "!NEW!" 2>nul
   echo.
   echo   Could not reach GitHub, so there is no new firmware to install.
   echo   NOTHING WAS CHANGED - everything you had still works offline.
@@ -73,43 +81,15 @@ if errorlevel 1 (
   echo.
   pause & exit /b 1
 )
-
-REM  Compare what was last UNPACKED, not what git has checked out. They are not
-REM  the same thing: a reset by hand, or an unpack that was interrupted, leaves
-REM  git pointing at the new release while the files on disk are still the old
-REM  ones. HEAD is what we HAVE; .unpacked is what we have actually INSTALLED.
-set "HAVE="
-if exist ".unpacked" set /p HAVE=<.unpacked
-for /f %%H in ('git rev-parse FETCH_HEAD') do set "WANT=%%H"
-if "!HAVE!"=="!WANT!" if exist "tools\hs300_ota.py" (
+if not exist "!NEW!\%ARC%" (
+  rmdir /s /q "!NEW!" 2>nul
   echo.
-  echo   Already up to date - this is the firmware that is published.
-  echo   Nothing to do, nothing changed.
-  echo.
-  if not defined HS300_NOPAUSE pause
-  exit /b 0
-)
-
-echo   new firmware is published:
-git log --oneline -1 FETCH_HEAD
-
-REM  --hard, and onto FETCH_HEAD rather than a pull: it must work even when the
-REM  published history was replaced rather than added to. It only touches files
-REM  git is tracking - the archive and these scripts - so anything you made
-REM  yourself is left alone.
-git reset -q --hard FETCH_HEAD
-if errorlevel 1 (
-  echo.
-  echo   Could not apply the update. NOTHING WAS CHANGED.
-  echo   Tell the engineer; do not try to fix it by hand.
+  echo   The download did not contain %ARC%. NOTHING WAS CHANGED.
   echo.
   pause & exit /b 1
 )
-if not exist "%ARC%" (
-  echo.
-  echo   The download did not include %ARC%. Nothing was unpacked.
-  pause & exit /b 1
-)
+echo   got it:
+git -C "!NEW!" log --oneline -1
 
 echo.
 echo   enter the password you were given
@@ -118,59 +98,79 @@ set "PW="
 set /p "PW=  password: "
 echo.
 
-REM  TEST the archive before deleting a single file. This is the whole point of
-REM  the order: a wrong password here costs nothing.
+REM  Test, then unpack, and only then replace. A mistyped password costs
+REM  nothing at all at this point.
 echo   checking the password...
-"%SEVENZIP%" t -p"!PW!" "%ARC%" >nul
+"!SEVENZIP!" t -p"!PW!" "!NEW!\%ARC%" >nul
 if errorlevel 1 (
   set "PW="
+  rmdir /s /q "!NEW!" 2>nul
   echo.
   echo   *** Wrong password, or the archive is damaged. ***
-  echo   NOTHING WAS DELETED - the firmware you had is untouched.
+  echo   NOTHING WAS CHANGED - the firmware you had is untouched.
   echo.
   pause & exit /b 1
 )
-echo   password is good.
-
-REM  Now, and only now, clear out the old firmware so a board or a tool that
-REM  was WITHDRAWN does not sit here looking current. Only what the archive
-REM  delivers is removed; your marker file, notes and logs are not.
-echo   removing the old firmware...
-for /d %%D in ("HS300_*") do rmdir /s /q "%%D"
-rmdir /s /q "tools"      2>nul
-rmdir /s /q "docs"       2>nul
-rmdir /s /q "bootloader" 2>nul
-del /q "FLASH.bat" "CHECK_SENSOR.bat" "ZERO_ADC.bat" "PORT.bat" "DASHBOARD.bat" 2>nul
-
-echo   unpacking the new firmware...
-"%SEVENZIP%" x -y -p"!PW!" "%ARC%" >nul
+echo   password is good. unpacking...
+"!SEVENZIP!" x -y -p"!PW!" -o"!NEW!" "!NEW!\%ARC%" >nul
 set RC=!ERRORLEVEL!
 set "PW="
 if not "!RC!"=="0" (
+  rmdir /s /q "!NEW!" 2>nul
   echo.
-  echo   *** The unpack FAILED after the old firmware was removed. ***
-  echo   This folder is now incomplete. Run SETUP.bat in a new, empty
-  echo   folder - do not flash anything from here.
+  echo   The unpack failed. NOTHING WAS CHANGED.
   echo.
   pause & exit /b 1
 )
-if not exist "tools\hs300_ota.py" (
+if not exist "!NEW!\tools\hs300_ota.py" (
+  rmdir /s /q "!NEW!" 2>nul
   echo.
-  echo   *** The unpack finished but the flashing tools are not there. ***
+  echo   The new folder has no flashing tools in it, so it is not usable.
+  echo   NOTHING WAS CHANGED. Tell the engineer.
+  echo.
+  pause & exit /b 1
+)
+
+REM  The new tree is complete and proven. Carry the marker file across BEFORE
+REM  the mirror, or the mirror would delete it as "not in the new tree".
+if exist "!DIR!" (
+  for %%M in ("!DIR!\tty*.*" "!DIR!\port*.*" "!DIR!\ccom*.*" "!DIR!\com*.*") do (
+    if exist "%%M" copy /y "%%M" "!NEW!\" >nul & echo   keeping your marker file %%~nxM
+  )
+)
+
+echo.
+echo   replacing this folder with the new one...
+if not exist "!DIR!" mkdir "!DIR!"
+REM  /MIR copies everything in AND deletes whatever is not in the new tree, so
+REM  the result is exactly the new release with no leftovers. It never renames
+REM  or deletes the folder itself, which matters: Windows refuses that while any
+REM  window is sitting in it. Robocopy codes below 8 are success, not failure.
+robocopy "!NEW!" "!DIR!" /MIR /NFL /NDL /NJH /NJS /NP >nul
+if !ERRORLEVEL! GEQ 8 (
+  echo.
+  echo   *** This folder could not be replaced. ***
+  echo   The new firmware is still in "!NEW!" - do not delete it, and tell
+  echo   the engineer.
+  echo.
+  pause & exit /b 1
+)
+rmdir /s /q "!NEW!" 2>nul
+
+if not exist "!DIR!\tools\hs300_ota.py" (
+  echo.
+  echo   *** This folder is incomplete after replacing it. ***
   echo   Do not flash from here. Tell the engineer.
   echo.
   pause & exit /b 1
 )
 
-REM  Written LAST, and only now: it is the record that the files on disk really
-REM  are this release. Writing it any earlier would make an interrupted unpack
-REM  look finished.
-git rev-parse HEAD > ".unpacked"
-
 echo.
 echo   ======================================================
-echo    Updated. Boards available:
-for /d %%D in ("HS300_*") do (
+echo    Updated - this folder is now exactly what is published.
+echo.
+echo    Boards available:
+for /d %%D in ("!DIR!\HS300_*") do (
   if exist "%%D\STABLE" (echo       %%~nxD   STABLE) else (echo       %%~nxD   no STABLE - ask the engineer)
 )
 echo.

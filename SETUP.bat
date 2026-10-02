@@ -60,38 +60,45 @@ if errorlevel 1 (
 echo   [OK] pyserial
 
 REM --------------------------------------------------------- the firmware ---
-REM  There is ONE update path on purpose, and it is UPDATE.bat: it fetches
-REM  first, checks the password actually opens the new archive, and only then
-REM  replaces anything - so an offline laptop or a mistyped password costs
-REM  nothing. Doing it again here would mean two copies of the careful part,
-REM  and sooner or later only one of them would be right.
+REM  There is ONE implementation of getting the firmware, and it is UPDATE.bat:
+REM  it downloads and unpacks into a TEMPORARY folder, and only replaces the
+REM  real one once the password has opened the archive and the flashing tool is
+REM  really there. So an offline laptop or a mistyped password costs nothing.
+REM
+REM  SETUP.bat travels on its own, with no UPDATE.bat beside it, so it fetches
+REM  one into TEMP and calls that. Writing the careful part a second time here
+REM  would mean two versions of it, and sooner or later only one would be right.
 echo.
 if exist "FLASH.bat" goto :inplace
-if exist "%DEST%\.git" goto :handover
 
-echo   [..] downloading the firmware folder
+set "BOOT=%TEMP%\hs300_bootstrap"
+rmdir /s /q "%BOOT%" 2>nul
+echo   [..] fetching the installer
 echo        No sign-in needed - this repository is public.
-echo.
-git clone --branch %BRANCH% --single-branch %REPO% "%DEST%"
+git clone -q --depth 1 --branch %BRANCH% --single-branch %REPO% "%BOOT%"
 if errorlevel 1 (
-  echo.
+  rmdir /s /q "%BOOT%" 2>nul
   echo   [!!] Download failed - this laptop probably has no internet.
-  echo        Nothing else was changed. Try again when it is online.
+  echo        Nothing was changed. Try again when it is online.
   set PROBLEM=1
   goto :sorry
 )
+if not exist "%BOOT%\UPDATE.bat" (
+  rmdir /s /q "%BOOT%" 2>nul
+  echo   [!!] the download is missing UPDATE.bat - it did not complete.
+  set PROBLEM=1
+  goto :sorry
+)
+echo   [OK] installer
 
-:handover
-if not exist "%DEST%\UPDATE.bat" (
-  echo   [!!] the download did not complete - UPDATE.bat is not there.
-  set PROBLEM=1
-  goto :sorry
-)
-echo.
+REM  Already in TEMP, so it cannot be overwritten while it runs - call its
+REM  worker directly and tell it which folder to build.
 set HS300_NOPAUSE=1
-call "%DEST%\UPDATE.bat"
+call "%BOOT%\UPDATE.bat" --inplace "%~dp0%DEST%\"
+set "RC=%ERRORLEVEL%"
 set "HS300_NOPAUSE="
-if errorlevel 1 (
+rmdir /s /q "%BOOT%" 2>nul
+if not "%RC%"=="0" (
   set PROBLEM=1
   goto :sorry
 )
