@@ -74,7 +74,12 @@ if errorlevel 1 (
   pause & exit /b 1
 )
 
-for /f %%H in ('git rev-parse HEAD') do set "HAVE=%%H"
+REM  Compare what was last UNPACKED, not what git has checked out. They are not
+REM  the same thing: a reset by hand, or an unpack that was interrupted, leaves
+REM  git pointing at the new release while the files on disk are still the old
+REM  ones. HEAD is what we HAVE; .unpacked is what we have actually INSTALLED.
+set "HAVE="
+if exist ".unpacked" set /p HAVE=<.unpacked
 for /f %%H in ('git rev-parse FETCH_HEAD') do set "WANT=%%H"
 if "!HAVE!"=="!WANT!" if exist "tools\hs300_ota.py" (
   echo.
@@ -156,6 +161,11 @@ if not exist "tools\hs300_ota.py" (
   echo.
   pause & exit /b 1
 )
+
+REM  Written LAST, and only now: it is the record that the files on disk really
+REM  are this release. Writing it any earlier would make an interrupted unpack
+REM  look finished.
+git rev-parse HEAD > ".unpacked"
 
 echo.
 echo   ======================================================
