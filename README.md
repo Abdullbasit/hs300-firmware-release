@@ -6,6 +6,28 @@ image per board, plus the tools to put it on a drive.
 **The firmware is inside `hs300-release.7z`, which is encrypted.** You need the
 password from the engineer. Everything else is automatic.
 
+## Read these — no password needed
+
+They are here in [`docs/`](docs/), readable right now in this browser, on a
+phone, at the wellhead:
+
+| | |
+|---|---|
+| [MANUAL.md](docs/MANUAL.md) | start here — ports, dashboard, settings, flashing |
+| [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | **symptom first.** Everything in it really happened |
+| [FAULT_CODES.md](docs/FAULT_CODES.md) | every fault and stop code, what caused it, what to do |
+| [COMMS.md](docs/COMMS.md) | the serial protocol, the register banks, the capture ring |
+
+**As PDF**, if you would rather print one or read it off a phone:
+[MANUAL](docs/pdf/MANUAL.pdf) ·
+[TROUBLESHOOTING](docs/pdf/TROUBLESHOOTING.pdf) ·
+[FAULT_CODES](docs/pdf/FAULT_CODES.pdf) ·
+[COMMS](docs/pdf/COMMS.pdf) ·
+**[the complete manual, all four in one](docs/pdf/HS300_COMPLETE_MANUAL.pdf)**.
+
+All of it is inside the archive too, so it is on the laptop offline once
+`SETUP.bat` has run - `docs\` beside the boards, with `docs\pdf\` in it.
+
 ## First time on a laptop
 
 Download **`SETUP.bat`** on its own and double-click it. It installs git, Python,
@@ -60,5 +82,6 @@ If you do not see **both**, the drive did not take it.
 - A **brand new board cannot be flashed over serial at all** — there is no
   bootloader yet. Use the `full_<BOARD>_<CRC>.hex` with an ST-Link, and **mass
   erase the chip first**.
-- Do not edit this folder. It is published output and `UPDATE.bat` will refuse
-  to update a folder that has been edited.
+- Do not edit this folder. It is published output; `UPDATE.bat` replaces it
+  wholesale with a clean copy, so anything you leave in it is lost. Your port
+  marker file is the one thing kept — keep notes and logs somewhere else.
